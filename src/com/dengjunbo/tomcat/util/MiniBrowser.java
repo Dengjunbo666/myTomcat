@@ -1,5 +1,7 @@
 package com.dengjunbo.tomcat.util;
 
+import cn.hutool.http.HttpUtil;
+
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -8,10 +10,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-
-import cn.hutool.core.convert.Convert;
-import cn.hutool.core.util.ZipUtil;
-import cn.hutool.http.HttpUtil;
 
 public class MiniBrowser {
 
@@ -23,16 +21,32 @@ public class MiniBrowser {
         System.out.println(httpString);
     }
 
-    public static byte[] getContentBytes(String url) {
-        return getContentBytes(url, false);
+    public static byte[] getContentBytes(String url, Map<String,Object> params, boolean isGet) {
+        return getContentBytes(url, false,params,isGet);
     }
 
-    public static String getContentString(String url) {
-        return getContentString(url,false);
+    public static byte[] getContentBytes(String url, boolean gzip) {
+        return getContentBytes(url, gzip,null,true);
+    }
+
+    public static byte[] getContentBytes(String url) {
+        return getContentBytes(url, false,null,true);
+    }
+
+    public static String getContentString(String url, Map<String,Object> params, boolean isGet) {
+        return getContentString(url,false,params,isGet);
     }
 
     public static String getContentString(String url, boolean gzip) {
-        byte[] result = getContentBytes(url, gzip);
+        return getContentString(url, gzip, null, true);
+    }
+
+    public static String getContentString(String url) {
+        return getContentString(url, false, null, true);
+    }
+
+    public static String getContentString(String url, boolean gzip, Map<String,Object> params, boolean isGet) {
+        byte[] result = getContentBytes(url, gzip,params,isGet);
         if(null==result)
             return null;
         try {
@@ -42,8 +56,8 @@ public class MiniBrowser {
         }
     }
 
-    public static byte[] getContentBytes(String url, boolean gzip) {
-        byte[] response = getHttpBytes(url,gzip);
+    public static byte[] getContentBytes(String url, boolean gzip, Map<String,Object> params, boolean isGet) {
+        byte[] response = getHttpBytes(url,gzip,params,isGet);
         byte[] doubleReturn = "\r\n\r\n".getBytes();
 
         int pos = -1;
@@ -65,15 +79,24 @@ public class MiniBrowser {
     }
 
     public static String getHttpString(String url,boolean gzip) {
-        byte[]  bytes=getHttpBytes(url,gzip);
-        return new String(bytes).trim();
+        return getHttpString(url, gzip, null, true);
     }
 
     public static String getHttpString(String url) {
-        return getHttpString(url,false);
+        return getHttpString(url, false, null, true);
     }
 
-    public static byte[] getHttpBytes(String url,boolean gzip) {
+    public static String getHttpString(String url,boolean gzip, Map<String,Object> params, boolean isGet) {
+        byte[]  bytes=getHttpBytes(url,gzip,params,isGet);
+        return new String(bytes).trim();
+    }
+
+    public static String getHttpString(String url, Map<String,Object> params, boolean isGet) {
+        return getHttpString(url,false,params,isGet);
+    }
+
+    public static byte[] getHttpBytes(String url,boolean gzip, Map<String,Object> params, boolean isGet) {
+        String method = isGet?"GET":"POST";
         byte[] result = null;
         try {
             URL u = new URL(url);
@@ -97,7 +120,12 @@ public class MiniBrowser {
             if(path.length()==0)
                 path = "/";
 
-            String firstLine = "GET " + path + " HTTP/1.1\r\n";
+            if(null!=params && isGet){
+                String paramsString = HttpUtil.toParams(params);
+                path = path + "?" + paramsString;
+            }
+
+            String firstLine = method + " " + path + " HTTP/1.1\r\n";
 
             StringBuffer httpRequestString = new StringBuffer();
             httpRequestString.append(firstLine);
@@ -107,11 +135,17 @@ public class MiniBrowser {
                 httpRequestString.append(headerLine);
             }
 
+            if(null!=params && !isGet){
+                String paramsString = HttpUtil.toParams(params);
+                httpRequestString.append("\r\n");
+                httpRequestString.append(paramsString);
+            }
+
             PrintWriter pWriter = new PrintWriter(client.getOutputStream(), true);
             pWriter.println(httpRequestString);
             InputStream is = client.getInputStream();
 
-            result = readBytes(is);
+            result = readBytes(is,true);
             client.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -126,7 +160,7 @@ public class MiniBrowser {
 
     }
 
-    public static byte[] readBytes(InputStream is) throws IOException {
+    public static byte[] readBytes(InputStream is, boolean fully) throws IOException {
         int buffer_size = 1024;
         byte buffer[] = new byte[buffer_size];
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -135,7 +169,7 @@ public class MiniBrowser {
             if(-1==length)
                 break;
             baos.write(buffer, 0, length);
-            if(length!=buffer_size)
+            if(!fully && length!=buffer_size)
                 break;
         }
         byte[] result =baos.toByteArray();
